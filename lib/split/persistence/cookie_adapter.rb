@@ -5,6 +5,7 @@ require "json"
 module Split
   module Persistence
     class CookieAdapter
+      DEFAULT_CONFIG = {cookie_key_name: "split"}.freeze
 
       def initialize(context)
         @context = context
@@ -32,7 +33,7 @@ module Split
       private
 
       def set_cookie(value = {})
-        cookie_key = :split.to_s
+        cookie_key = self.class.config[:cookie_key_name].to_s
         cookie_value = default_options.merge(value: JSON.generate(value))
         if action_dispatch?
           # The "send" is necessary when we call ab_test from the controller
@@ -71,7 +72,7 @@ module Split
 
       def hash
         @hash ||= begin
-          if cookies = @cookies[:split.to_s]
+          if cookies = @cookies[self.class.config[:cookie_key_name].to_s]
             begin
               JSON.parse(cookies)
             rescue JSON::ParserError
@@ -89,6 +90,19 @@ module Split
 
       def action_dispatch?
         defined?(Rails) && @response.is_a?(ActionDispatch::Response)
+      end
+
+      def self.with_config(options={})
+        self.config.merge!(options)
+        self
+      end
+
+      def self.config
+        @config ||= DEFAULT_CONFIG.dup
+      end
+
+      def self.reset_config!
+        @config = DEFAULT_CONFIG.dup
       end
     end
   end
