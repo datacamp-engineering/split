@@ -17,6 +17,16 @@ describe Split::Persistence::CookieAdapter do
     end
   end
 
+  describe ".config" do
+    context 'config with overridden cookie key name' do
+      before { Split::Persistence::CookieAdapter.with_config(:cookie_key_name => 'foo123') }
+
+      it 'should be "foo123"' do
+        expect(Split::Persistence::CookieAdapter.config[:cookie_key_name]).to eq('foo123')
+      end
+    end
+  end
+
   describe "#delete" do
     it "should delete the given key" do
       subject["my_key"] = "my_value"
