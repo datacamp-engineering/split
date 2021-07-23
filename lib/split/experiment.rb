@@ -1,38 +1,34 @@
 # frozen_string_literal: true
+
+require 'rubystats'
+
 module Split
   class Experiment
     attr_accessor :name
-    attr_writer :algorithm
-    attr_accessor :resettable
     attr_accessor :goals
-    attr_accessor :alternatives
     attr_accessor :alternative_probabilities
     attr_accessor :metadata
+
+    attr_reader :alternatives
+    attr_reader :resettable
 
     DEFAULT_OPTIONS = {
       :resettable => true
     }
+
+    def self.find(name)
+      Split.cache(:experiments, name) do
+        return unless Split.redis.exists?(name)
+        Experiment.new(name).tap { |exp| exp.load_from_redis }
+      end
+    end
 
     def initialize(name, options = {})
       options = DEFAULT_OPTIONS.merge(options)
 
       @name = name.to_s
 
-      alternatives = extract_alternatives_from_options(options)
-
-      if alternatives.empty? && (exp_config = Split.configuration.experiment_for(name))
-        options = {
-          alternatives: load_alternatives_from_configuration,
-          goals: Split::GoalsCollection.new(@name).load_from_configuration,
-          metadata: load_metadata_from_configuration,
-          resettable: exp_config[:resettable],
-          algorithm: exp_config[:algorithm]
-        }
-      else
-        options[:alternatives] = alternatives
-      end
-
-      set_alternatives_and_options(options)
+      extract_alternatives_from_options(options)
     end
 
     def self.finished_key(key)
@@ -40,11 +36,15 @@ module Split
     end
 
     def set_alternatives_and_options(options)
-      self.alternatives = options[:alternatives]
-      self.goals = options[:goals]
-      self.resettable = options[:resettable]
-      self.algorithm = options[:algorithm]
-      self.metadata = options[:metadata]
+      options_with_defaults = DEFAULT_OPTIONS.merge(
+        options.reject { |k, v| v.nil? }
+      )
+
+      self.alternatives = options_with_defaults[:alternatives]
+      self.goals = options_with_defaults[:goals]
+      self.resettable = options_with_defaults[:resettable]
+      self.algorithm = options_with_defaults[:algorithm]
+      self.metadata = options_with_defaults[:metadata]
     end
 
     def extract_alternatives_from_options(options)
@@ -52,7 +52,7 @@ module Split
 
       if alts.length == 1
         if alts[0].is_a? Hash
-          alts = alts[0].map{|k,v| {k => v} }
+          alts = alts[0].map{|k, v| {k => v} }
         end
       end
 
@@ -81,14 +81,14 @@ module Split
 
       if new_record?
         start unless Split.configuration.start_manually
+        persist_experiment_configuration
       elsif experiment_configuration_has_changed?
         reset unless Split.configuration.reset_manually
+        persist_experiment_configuration
       end
 
-      persist_experiment_configuration if new_record? || experiment_configuration_has_changed?
-
-      redis.hset(experiment_config_key, :resettable, resettable)
-      redis.hset(experiment_config_key, :algorithm, algorithm.to_s)
+      redis.hset(experiment_config_key, :resettable, resettable,
+                                        :algorithm, algorithm.to_s)
       self
     end
 
@@ -101,7 +101,7 @@ module Split
     end
 
     def new_record?
-      !redis.exists(name)
+      ExperimentCatalog.find(name).nil?
     end
 
     def ==(obj)
@@ -135,24 +135,29 @@ module Split
     end
 
     def winner
-      experiment_winner = redis.hget(:experiment_winner, name)
-      if experiment_winner
-        Split::Alternative.new(experiment_winner, name)
-      else
-        nil
+      Split.cache(:experiment_winner, name) do
+        experiment_winner = redis.hget(:experiment_winner, name)
+        if experiment_winner
+          Split::Alternative.new(experiment_winner, name)
+        else
+          nil
+        end
       end
     end
 
     def has_winner?
-      !winner.nil?
+      return @has_winner if defined? @has_winner
+      @has_winner = !winner.nil?
     end
 
     def winner=(winner_name)
       redis.hset(:experiment_winner, name, winner_name.to_s)
+      @has_winner = true
+      Split.configuration.on_experiment_winner_choose.call(self)
     end
 
     def participant_count
-      alternatives.inject(0){|sum,a| sum + a.participant_count}
+      alternatives.inject(0){|sum, a| sum + a.participant_count}
     end
 
     def control
@@ -161,6 +166,8 @@ module Split
 
     def reset_winner
       redis.hdel(:experiment_winner, name)
+      @has_winner = false
+      Split::Cache.clear_key(@name)
     end
 
     def start
@@ -168,13 +175,15 @@ module Split
     end
 
     def start_time
-      t = redis.hget(:experiment_start_times, @name)
-      if t
-        # Check if stored time is an integer
-        if t =~ /^[-+]?[0-9]+$/
-          Time.at(t.to_i)
-        else
-          Time.parse(t)
+      Split.cache(:experiment_start_times, @name) do
+        t = redis.hget(:experiment_start_times, @name)
+        if t
+          # Check if stored time is an integer
+          if t =~ /^[-+]?[0-9]+$/
+            Time.at(t.to_i)
+          else
+            Time.parse(t)
+          end
         end
       end
     end
@@ -225,6 +234,7 @@ module Split
 
     def reset
       Split.configuration.on_before_experiment_reset.call(self)
+      Split::Cache.clear_key(@name)
       alternatives.each(&:reset)
       reset_winner
       Split.configuration.on_experiment_reset.call(self)
@@ -238,6 +248,7 @@ module Split
       end
       reset_winner
       redis.srem(:experiments, name)
+      remove_experiment_cohorting
       remove_experiment_configuration
       Split.configuration.on_experiment_delete.call(self)
       increment_version
@@ -335,7 +346,7 @@ module Split
 
     def find_simulated_winner(simulated_cr_hash)
       # figure out which alternative had the highest simulated conversion rate
-      winning_pair = ["",0.0]
+      winning_pair = ["", 0.0]
       simulated_cr_hash.each do |alternative, rate|
         if rate > winning_pair[1]
           winning_pair = [alternative, rate]
@@ -346,17 +357,13 @@ module Split
     end
 
     def calc_simulated_conversion_rates(beta_params)
-      # initialize a random variable (from which to simulate conversion rates ~beta-distributed)
-      rand = SimpleRandom.new
-      rand.set_seed
-
       simulated_cr_hash = {}
 
       # create a hash which has the conversion rate pulled from each alternative's beta distribution
       beta_params.each do |alternative, params|
         alpha = params[0]
         beta = params[1]
-        simulated_conversion_rate = rand.beta(alpha, beta)
+        simulated_conversion_rate = Rubystats::BetaDistribution.new(alpha, beta).rng
         simulated_cr_hash[alternative] = simulated_conversion_rate
       end
 
@@ -394,6 +401,23 @@ module Split
       js_id.gsub('/', '--')
     end
 
+    def cohorting_disabled?
+      @cohorting_disabled ||= begin
+        value = redis.hget(experiment_config_key, :cohorting)
+        value.nil? ? false : value.downcase == "true"
+      end
+    end
+
+    def disable_cohorting
+      @cohorting_disabled = true
+      redis.hset(experiment_config_key, :cohorting, true)
+    end
+
+    def enable_cohorting
+      @cohorting_disabled = false
+      redis.hset(experiment_config_key, :cohorting, false)
+    end
+
     protected
 
     def experiment_config_key
@@ -420,14 +444,14 @@ module Split
     end
 
     def load_alternatives_from_redis
-      case redis.type(@name)
-      when 'set' # convert legacy sets to lists
-        alts = redis.smembers(@name)
-        redis.del(@name)
-        alts.reverse.each {|a| redis.lpush(@name, a) }
-        redis.lrange(@name, 0, -1)
-      else
-        redis.lrange(@name, 0, -1)
+      alternatives = redis.lrange(@name, 0, -1)
+      alternatives.map do |alt|
+        alt = begin
+                JSON.parse(alt)
+              rescue
+                alt
+              end
+        Split::Alternative.new(alt, @name)
       end
     end
 
@@ -443,9 +467,14 @@ module Split
 
     def persist_experiment_configuration
       redis_interface.add_to_set(:experiments, name)
-      redis_interface.persist_list(name, @alternatives.map(&:name))
+      redis_interface.persist_list(name, @alternatives.map{|alt| {alt.name => alt.weight}.to_json})
       goals_collection.save
-      redis.set(metadata_key, @metadata.to_json) unless @metadata.nil?
+
+      if @metadata
+        redis.set(metadata_key, @metadata.to_json)
+      else
+        delete_metadata
+      end
     end
 
     def remove_experiment_configuration
@@ -456,16 +485,20 @@ module Split
     end
 
     def experiment_configuration_has_changed?
-      existing_alternatives = load_alternatives_from_redis
-      existing_goals = Split::GoalsCollection.new(@name).load_from_redis
-      existing_metadata = load_metadata_from_redis
-      existing_alternatives != @alternatives.map(&:name) ||
-        existing_goals != @goals ||
-        existing_metadata != @metadata
+      existing_experiment = Experiment.find(@name)
+
+      existing_experiment.alternatives.map(&:to_s) != @alternatives.map(&:to_s) ||
+        existing_experiment.goals != @goals ||
+        existing_experiment.metadata != @metadata
     end
 
     def goals_collection
       Split::GoalsCollection.new(@name, @goals)
+    end
+
+    def remove_experiment_cohorting
+      @cohorting_disabled = false
+      redis.hdel(experiment_config_key, :cohorting)
     end
   end
 end

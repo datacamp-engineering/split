@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 module Split
   module DashboardHelpers
     def h(text)
@@ -19,9 +20,9 @@ module Split
 
     def round(number, precision = 2)
       begin
-        BigDecimal.new(number.to_s)
+        BigDecimal(number.to_s)
       rescue ArgumentError
-        BigDecimal.new(0)
+        BigDecimal(0)
       end.round(precision).to_f
     end
 

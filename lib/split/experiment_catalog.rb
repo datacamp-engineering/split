@@ -13,8 +13,7 @@ module Split
     end
 
     def self.find(name)
-      return unless Split.redis.exists(name)
-      Experiment.new(name).tap { |exp| exp.load_from_redis }
+      Experiment.find(name)
     end
 
     def self.find_or_initialize(metric_descriptor, control = nil, *alternatives)
@@ -46,6 +45,5 @@ module Split
       return experiment_name, goals
     end
     private_class_method :normalize_experiment
-
   end
 end

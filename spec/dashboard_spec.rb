@@ -6,8 +6,16 @@ require 'split/dashboard'
 describe Split::Dashboard do
   include Rack::Test::Methods
 
+  class TestDashboard < Split::Dashboard
+    include Split::Helper
+
+    get '/my_experiment' do
+      ab_test(params[:experiment], 'blue', 'red')
+    end
+  end
+
   def app
-    @app ||= Split::Dashboard
+    @app ||= TestDashboard
   end
 
   def link(color)
@@ -28,6 +36,10 @@ describe Split::Dashboard do
 
   let(:red_link) { link("red") }
   let(:blue_link) { link("blue") }
+
+  before(:each) do
+    Split.configuration.beta_probability_simulations = 1
+  end
 
   it "should respond to /" do
     get '/'
@@ -74,17 +86,49 @@ describe Split::Dashboard do
   end
 
   describe "force alternative" do
-    let!(:user) do
-      Split::User.new(@app, { experiment.name => 'a' })
+    context "initial version" do
+      let!(:user) do
+        Split::User.new(@app, { experiment.name => 'red' })
+      end
+
+      before do
+        allow(Split::User).to receive(:new).and_return(user)
+      end
+
+      it "should set current user's alternative" do
+        blue_link.participant_count = 7
+        post "/force_alternative?experiment=#{experiment.name}", alternative: "blue"
+
+        get "/my_experiment?experiment=#{experiment.name}"
+        expect(last_response.body).to include("blue")
+      end
+
+      it "should not modify an existing user" do
+        blue_link.participant_count = 7
+        post "/force_alternative?experiment=#{experiment.name}", alternative: "blue"
+
+        expect(user[experiment.key]).to eq("red")
+        expect(blue_link.participant_count).to eq(7)
+      end
     end
 
-    before do
-      allow(Split::User).to receive(:new).and_return(user)
-    end
+    context "incremented version" do
+      let!(:user) do
+        experiment.increment_version
+        Split::User.new(@app, { "#{experiment.name}:#{experiment.version}" => 'red' })
+      end
 
-    it "should set current user's alternative" do
-      post "/force_alternative?experiment=#{experiment.name}", alternative: "b"
-      expect(user[experiment.name]).to eq("b")
+      before do
+        allow(Split::User).to receive(:new).and_return(user)
+      end
+
+      it "should set current user's alternative" do
+        blue_link.participant_count = 7
+        post "/force_alternative?experiment=#{experiment.name}", alternative: "blue"
+
+        get "/my_experiment?experiment=#{experiment.name}"
+        expect(last_response.body).to include("blue")
+      end
     end
   end
 
@@ -120,7 +164,7 @@ describe Split::Dashboard do
     it "removes winner" do
       post "/reopen?experiment=#{experiment.name}"
 
-      expect(experiment).to_not have_winner
+      expect(Split::ExperimentCatalog.find(experiment.name)).to_not have_winner
     end
 
     it "keeps existing stats" do
@@ -132,6 +176,28 @@ describe Split::Dashboard do
 
       expect(red_link.participant_count).to eq(5)
       expect(blue_link.participant_count).to eq(7)
+    end
+  end
+
+  describe "update cohorting" do
+    it "calls enable of cohorting when action is enable" do
+      post "/update_cohorting?experiment=#{experiment.name}", { "cohorting_action": "enable" }
+
+      expect(experiment.cohorting_disabled?).to eq false
+    end
+
+    it "calls disable of cohorting when action is disable" do
+      post "/update_cohorting?experiment=#{experiment.name}", { "cohorting_action": "disable" }
+
+      expect(experiment.cohorting_disabled?).to eq true
+    end
+
+    it "calls neither enable or disable cohorting when passed invalid action" do
+      previous_value = experiment.cohorting_disabled?
+
+      post "/update_cohorting?experiment=#{experiment.name}", { "cohorting_action": "other" }
+
+      expect(experiment.cohorting_disabled?).to eq previous_value
     end
   end
 
@@ -167,19 +233,14 @@ describe Split::Dashboard do
   end
 
   it "should display the start date" do
-    experiment_start_time = Time.parse('2011-07-07')
-    expect(Time).to receive(:now).at_least(:once).and_return(experiment_start_time)
-    experiment
+    experiment.start
 
     get '/'
 
-    expect(last_response.body).to include('<small>2011-07-07</small>')
+    expect(last_response.body).to include("<small>#{experiment.start_time.strftime('%Y-%m-%d')}</small>")
   end
 
   it "should handle experiments without a start date" do
-    experiment_start_time = Time.parse('2011-07-07')
-    expect(Time).to receive(:now).at_least(:once).and_return(experiment_start_time)
-
     Split.redis.hdel(:experiment_start_times, experiment.name)
 
     get '/'

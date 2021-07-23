@@ -1,18 +1,21 @@
 # frozen_string_literal: true
+
 module Split
   class Trial
+    attr_accessor :goals
     attr_accessor :experiment
-    attr_accessor :metadata
+    attr_writer :metadata
 
     def initialize(attrs = {})
       self.experiment   = attrs.delete(:experiment)
       self.alternative  = attrs.delete(:alternative)
       self.metadata  = attrs.delete(:metadata)
+      self.goals = attrs.delete(:goals) || []
 
       @user             = attrs.delete(:user)
       @options          = attrs
 
-      @alternative_choosen = false
+      @alternative_chosen = false
     end
 
     def metadata
@@ -33,7 +36,7 @@ module Split
       end
     end
 
-    def complete!(goals=[], context = nil)
+    def complete!(context = nil)
       if alternative
         if Array(goals).empty?
           alternative.increment_completion
@@ -51,8 +54,9 @@ module Split
     def choose!(context = nil)
       @user.cleanup_old_experiments!
       # Only run the process once
-      return alternative if @alternative_choosen
+      return alternative if @alternative_chosen
 
+      new_participant = @user[@experiment.key].nil?
       if override_is_alternative?
         self.alternative = @options[:override]
         if should_store_alternative? && !@user[@experiment.key]
@@ -68,23 +72,27 @@ module Split
         if exclude_user?
           self.alternative = @experiment.control
         else
-          value = @user[@experiment.key]
-          if value
-            self.alternative = value
-          else
-            self.alternative = @experiment.next_alternative
+          self.alternative = @user[@experiment.key]
+          if alternative.nil?
+            if @experiment.cohorting_disabled?
+              self.alternative = @experiment.control
+            else
+              self.alternative = @experiment.next_alternative
 
-            # Increment the number of participants since we are actually choosing a new alternative
-            self.alternative.increment_participation
+              # Increment the number of participants since we are actually choosing a new alternative
+              self.alternative.increment_participation
 
-            run_callback context, Split.configuration.on_trial_choose
+              run_callback context, Split.configuration.on_trial_choose
+            end
           end
         end
       end
 
-      @user[@experiment.key] = alternative.name if should_store_alternative?
-      @alternative_choosen = true
-      run_callback context, Split.configuration.on_trial unless @options[:disabled] || Split.configuration.disabled?
+      new_participant_and_cohorting_disabled = new_participant && @experiment.cohorting_disabled?
+
+      @user[@experiment.key] = alternative.name unless @experiment.has_winner? || !should_store_alternative? || new_participant_and_cohorting_disabled
+      @alternative_chosen = true
+      run_callback context, Split.configuration.on_trial unless @options[:disabled] || Split.configuration.disabled? || new_participant_and_cohorting_disabled
       alternative
     end
 

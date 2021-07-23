@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require "split/helper"
 
 # Split's helper exposes all kinds of methods we don't want to
@@ -28,8 +29,8 @@ module Split
       end
     end
 
-    def ab_test(*arguments,&block)
-      split_context_shim.ab_test(*arguments,&block)
+    def ab_test(*arguments, &block)
+      split_context_shim.ab_test(*arguments, &block)
     end
 
     private

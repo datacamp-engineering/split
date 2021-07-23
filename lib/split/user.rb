@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'forwardable'
 
 module Split
@@ -6,11 +8,13 @@ module Split
     def_delegators :@user, :keys, :[], :[]=, :delete
     attr_reader :user
 
-    def initialize(context, adapter=nil)
+    def initialize(context, adapter = nil)
       @user = adapter || Split::Persistence.adapter.new(context)
+      @cleaned_up = false
     end
 
     def cleanup_old_experiments!
+      return if @cleaned_up
       keys_without_finished(user.keys).each do |key|
         experiment = ExperimentCatalog.find key_without_version(key)
         if experiment.nil? || experiment.has_winner? || experiment.start_time.nil?
@@ -18,12 +22,14 @@ module Split
           user.delete Experiment.finished_key(key)
         end
       end
+      @cleaned_up = true
     end
 
     def max_experiments_reached?(experiment_key)
       if Split.configuration.allow_multiple_experiments == 'control'
         experiments = active_experiments
-        count_control = experiments.count {|k,v| k == experiment_key || v == 'control'}
+        experiment_key_without_version = key_without_version(experiment_key)
+        count_control = experiments.count {|k, v| k == experiment_key_without_version || v == 'control'}
         experiments.size > count_control
       else
         !Split.configuration.allow_multiple_experiments &&
@@ -38,7 +44,7 @@ module Split
 
     def active_experiments
       experiment_pairs = {}
-      user.keys.each do |key|
+      keys_without_finished(user.keys).each do |key|
         Metric.possible_experiments(key_without_version(key)).each do |experiment|
           if !experiment.has_winner?
             experiment_pairs[key_without_version(key)] = user[key]
@@ -46,6 +52,16 @@ module Split
         end
       end
       experiment_pairs
+    end
+
+    def self.find(user_id, adapter)
+      adapter = adapter.is_a?(Symbol) ? Split::Persistence::ADAPTERS[adapter] : adapter
+
+      if adapter.respond_to?(:find)
+        User.new(nil, adapter.find(user_id))
+      else
+        nil
+      end
     end
 
     private

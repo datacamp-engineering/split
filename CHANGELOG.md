@@ -1,3 +1,114 @@
+## 4.0.0.pre
+
+Bugfixes:
+- ab_test must return metadata on error or if split is disabled/excluded user (@andrehjr, #622)
+- Fix versioned experiments when used with allow_multiple_experiments=control (@andrehjr, #613)
+- Only block Pinterest bot (@huoxito, #606)
+- Respect experiment defaults when loading experiments in initializer. (@mattwd7, #599)
+- Removes metadata key when it updated to nil (@andrehjr, #633)
+- Force experiment does not count for metrics (@andrehjr, #637)
+
+Features:
+- Make goals accessible via on_trial_complete callbacks (@robin-phung, #625)
+- Replace usage of SimpleRandom with RubyStats(Used for Beta Distribution RNG) (@andrehjr, #616)
+- Introduce enable/disable experiment cohorting (@robin-phung, #615)
+- Add on_experiment_winner_choose callback (@GenaMinenkov, #574)
+- Add Split::Cache to reduce load on Redis (@rdh, #648)
+- Caching based optimization in the experiment#save path (@amangup, #652)
+
+Misc:
+- Drop support for Ruby < 2.5 (@andrehjr, #627)
+- Drop support for Rails < 5 (@andrehkr, #607)
+- Bump minimum required redis to 4.2 (@andrehjr, #628)
+- Removed repeated loading from config (@robin-phung, #619)
+- Simplify RedisInterface usage when persisting Experiment alternatives (@andrehjr, #632)
+- Remove redis_url impl. Deprecated on version 2.2 (@andrehjr, #631)
+- Remove thread_safe config as redis-rb is thread_safe by default (@andrehjr, #630)
+- Fix typo of in `Split::Trial` class variable (TomasBarry, #644)
+- Single HSET to update values, instead of multiple ones (@andrehjr, #640)
+- Remove 'set' parsing for alternatives. Sets were used as storage and deprecated on 0.x (@andrehjr, #639)
+- Adding documentation related to what is stored on cookies. (@andrehjr, #634)
+
+## 3.4.1 (November 12th, 2019)
+
+Bugfixes:
+- Reference ActionController directly when including split helpers, to avoid breaking Rails API Controllers (@andrehjr, #602)
+
+## 3.4.0 (November 9th, 2019)
+
+Features:
+- Improve DualAdapter (@santib, #588), adds a new configuration for the DualAdapter, making it possible to keep consistency for logged_out/logged_in users. It's a opt-in flag. No Behavior was changed on this release.
+- Make dashboard pagination default "per" param configurable (@alopatin, #597)
+
+Bugfixes:
+- Fix `force_alternative` for experiments with incremented version (@giraffate, #568)
+- Persist alternative weights (@giraffate, #570)
+- Combined experiment performance improvements (@gnanou, #575)
+- Handle correctly case when ab_finished is called before ab_test for a user (@gnanou, #577)
+- When loading active_experiments, it should not look into user's 'finished' keys (@andrehjr, #582)
+
+Misc:
+- Remove `rubyforge_project` from gemspec (@giraffate, #583)
+- Fix URLs to replace http with https (@giraffate , #584)
+- Lazily include split helpers in ActionController::Base (@hasghari, #586)
+- Fix unused variable warnings (@andrehjr, #592)
+- Fix ruby warnings (@andrehjr, #593)
+- Update rubocop.yml config (@andrehjr, #594)
+- Add frozen_string_literal to all files that were missing it (@andrehjr, #595)
+
+## 3.3.2 (April 12th, 2019)
+
+Features:
+- Added uptime robot to configuration.rb (@razel1982, #556)
+- Check to see if being run in Rails application and run in before_initialize (@husteadrobert, #555)
+
+Bugfixes:
+- Fix error message interpolation (@hanibash, #553)
+- Fix Bigdecimal warnings (@agraves, #551)
+- Avoid hitting up on redis for robots/excluded users. (@andrehjr, #544)
+- Checks for defined?(request) on Helper#exclude_visitor?. (@andrehjr)
+
+Misc:
+- Update travis to add Rails 6 (@edmilton, #559)
+- Fix broken specs in developement environment (@dougpetronilio, #557)
+
+## 3.3.1 (January 11th, 2019)
+
+Features:
+- Filter some more bots (@janosch-x, #542)
+
+Bugfixes:
+- Fix Dashboard Pagination Helper typo (@cattekin, #541)
+- Do not storage alternative in cookie if experiment has a winner (@sadhu89, #539)
+- fix user participating alternative not found (@NaturalHokke, #536)
+
+Misc:
+- Tweak RSpec instructions (@eliotsykes, #540)
+- Improve README regarding rspec usage (@vermaxik, #538)
+
+## 3.3.0 (August 13th, 2018)
+
+Features:
+
+- Added pagination for dashboard (@GeorgeGorbanev, #518)
+- Add Facebot crawler to list of bots (@pfeiffer, #530)
+- Ignore previewing requests (@pfeiffer, #531)
+- Fix binding of ignore_filter (@pfeiffer, #533)
+
+Bugfixes:
+
+- Fix cookie header duplication (@andrehjr, #522)
+
+Performance:
+
+- Improve performance of RedisInterface#make_list_length by using LTRIM command (@mlovic, #509)
+
+Misc:
+
+- Update development dependencies
+- test rails 5.2 on travis (@lostapathy, #524)
+- update ruby versions for travis (@lostapathy, #525)
+
 ## 3.2.0 (September 21st, 2017)
 
 Features:

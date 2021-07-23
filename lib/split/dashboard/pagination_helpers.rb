@@ -1,12 +1,12 @@
 # frozen_string_literal: true
+
 require 'split/dashboard/paginator'
 
 module Split
   module DashboardPaginationHelpers
-    DEFAULT_PER = 10
-
     def pagination_per
-      @pagination_per ||= (params[:per] || DEFAULT_PER).to_i
+      default_per_page = Split.configuration.dashboard_pagination_default_per_page
+      @pagination_per ||= (params[:per] || default_per_page).to_i
     end
 
     def page_number
@@ -25,7 +25,7 @@ module Split
       html << current_page_tag
       html << next_page_tag if show_next_page_tag?(collection)
       html << ellipsis_tag if show_last_ellipsis_tag?(collection)
-      html << last_page_tagcollection if show_last_page_tag?(collection)
+      html << last_page_tag(collection) if show_last_page_tag?(collection)
       html.join
     end
 

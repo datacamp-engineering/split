@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 module Split
   module Helper
     OVERRIDE_PARAM_NAME = "ab_test"
@@ -8,7 +9,7 @@ module Split
     def ab_test(metric_descriptor, control = nil, *alternatives)
       begin
         experiment = ExperimentCatalog.find_or_initialize(metric_descriptor, control, *alternatives)
-        alternative = if Split.configuration.enabled
+        alternative = if Split.configuration.enabled && !exclude_visitor?
           experiment.save
           raise(Split::InvalidExperimentsFormatError) unless (Split.configuration.experiments || {}).fetch(experiment.name.to_sym, {})[:combined_experiments].nil?
           trial = Trial.new(:user => ab_user, :experiment => experiment,
@@ -32,8 +33,8 @@ module Split
       end
 
       if block_given?
-        metadata = trial ? trial.metadata : {}
-        yield(alternative, metadata)
+        metadata = experiment.metadata[alternative] if experiment.metadata
+        yield(alternative, metadata || {})
       else
         alternative
       end
@@ -44,15 +45,21 @@ module Split
     end
 
     def finish_experiment(experiment, options = {:reset => true})
+      return false if active_experiments[experiment.name].nil?
       return true if experiment.has_winner?
       should_reset = experiment.resettable? && options[:reset]
       if ab_user[experiment.finished_key] && !should_reset
         return true
       else
         alternative_name = ab_user[experiment.key]
-        trial = Trial.new(:user => ab_user, :experiment => experiment,
-              :alternative => alternative_name)
-        trial.complete!(options[:goals], self)
+        trial = Trial.new(
+          :user => ab_user, 
+          :experiment => experiment,
+          :alternative => alternative_name,
+          :goals => options[:goals],
+        )      
+        
+        trial.complete!(self)
 
         if should_reset
           reset!(experiment)
@@ -69,6 +76,7 @@ module Split
 
       if experiments.any?
         experiments.each do |experiment|
+          next if override_present?(experiment.key)
           finish_experiment(experiment, options.merge(:goals => goals))
         end
       end
@@ -79,7 +87,7 @@ module Split
 
     def ab_record_extra_info(metric_descriptor, key, value = 1)
       return if exclude_visitor? || Split.configuration.disabled?
-      metric_descriptor, goals = normalize_metric(metric_descriptor)
+      metric_descriptor, _ = normalize_metric(metric_descriptor)
       experiments = Metric.possible_experiments(metric_descriptor)
 
       if experiments.any?
@@ -104,13 +112,25 @@ module Split
       Split.configuration.db_failover_on_db_error.call(e)
     end
 
-
     def override_present?(experiment_name)
-      override_alternative(experiment_name)
+      override_alternative_by_params(experiment_name) || override_alternative_by_cookies(experiment_name)
     end
 
     def override_alternative(experiment_name)
+      override_alternative_by_params(experiment_name) || override_alternative_by_cookies(experiment_name)
+    end
+
+    def override_alternative_by_params(experiment_name)
       defined?(params) && params[OVERRIDE_PARAM_NAME] && params[OVERRIDE_PARAM_NAME][experiment_name]
+    end
+
+    def override_alternative_by_cookies(experiment_name)
+      return unless defined?(request)
+
+      if request.cookies && request.cookies.key?('split_override')
+        experiments = JSON.parse(request.cookies['split_override']) rescue {}
+        experiments[experiment_name]
+      end
     end
 
     def split_generically_disabled?
@@ -122,11 +142,15 @@ module Split
     end
 
     def exclude_visitor?
-      instance_eval(&Split.configuration.ignore_filter) || is_ignored_ip_address? || is_robot?
+      defined?(request) && (instance_exec(request, &Split.configuration.ignore_filter) || is_ignored_ip_address? || is_robot? || is_preview?)
     end
 
     def is_robot?
       defined?(request) && request.user_agent =~ Split.configuration.robot_regex
+    end
+
+    def is_preview?
+      defined?(request) && defined?(request.headers) && request.headers['x-purpose'] == 'preview'
     end
 
     def is_ignored_ip_address?

@@ -1,8 +1,7 @@
 # frozen_string_literal: true
+
 module Split
   class Configuration
-    attr_accessor :bots
-    attr_accessor :robot_regex
     attr_accessor :ignore_ip_addresses
     attr_accessor :ignore_filter
     attr_accessor :db_failover
@@ -22,13 +21,19 @@ module Split
     attr_accessor :on_experiment_reset
     attr_accessor :on_experiment_delete
     attr_accessor :on_before_experiment_reset
+    attr_accessor :on_experiment_winner_choose
     attr_accessor :on_before_experiment_delete
     attr_accessor :include_rails_helper
     attr_accessor :beta_probability_simulations
     attr_accessor :winning_alternative_recalculation_interval
     attr_accessor :redis
+    attr_accessor :dashboard_pagination_default_per_page
+    attr_accessor :cache
 
     attr_reader :experiments
+
+    attr_writer :bots
+    attr_writer :robot_regex
 
     def bots
       @bots ||= {
@@ -61,12 +66,14 @@ module Split
         'ColdFusion' => 'ColdFusion http library',
         'EventMachine HttpClient' => 'Ruby http library',
         'Go http package' => 'Go http library',
+        'Go-http-client' => 'Go http library',
         'Java' => 'Generic Java http library',
         'libwww-perl' => 'Perl client-server library loved by script kids',
         'lwp-trivial' => 'Another Perl library loved by script kids',
         'Python-urllib' => 'Python http library',
         'PycURL' => 'Python http library',
         'Test Certificate Info' => 'C http library?',
+        'Typhoeus' => 'Ruby http library',
         'Wget' => 'wget unix CLI http client',
 
         # URL expanders / previewers
@@ -74,12 +81,13 @@ module Split
         'bitlybot' => 'bit.ly bot',
         'bot@linkfluence.net' => 'Linkfluence bot',
         'facebookexternalhit' => 'facebook bot',
+        'Facebot' => 'Facebook crawler',
         'Feedfetcher-Google' => 'Google Feedfetcher',
         'https://developers.google.com/+/web/snippet' => 'Google+ Snippet Fetcher',
         'LinkedInBot' => 'LinkedIn bot',
         'LongURL' => 'URL expander service',
         'NING' => 'NING - Yet Another Twitter Swarmer',
-        'Pinterest' => 'Pinterest Bot',
+        'Pinterestbot' => 'Pinterest Bot',
         'redditbot' => 'Reddit Bot',
         'ShortLinkTranslate' => 'Link shortener',
         'Slackbot' => 'Slackbot link expander',
@@ -90,10 +98,12 @@ module Split
 
         # Uptime monitoring
         'check_http' => 'Nagios monitor',
+        'GoogleStackdriverMonitoring' => 'Google Cloud monitor',
         'NewRelicPinger' => 'NewRelic monitor',
         'Panopta' => 'Monitoring service',
         'Pingdom' => 'Pingdom monitoring',
         'SiteUptime' => 'Site monitoring services',
+        'UptimeRobot' => 'Monitoring service',
 
         # ???
         'DigitalPersona Fingerprint Software' => 'HP Fingerprint scanner',
@@ -166,7 +176,7 @@ module Split
     end
 
     def normalize_alternatives(alternatives)
-      given_probability, num_with_probability = alternatives.inject([0,0]) do |a,v|
+      given_probability, num_with_probability = alternatives.inject([0, 0]) do |a, v|
         p, n = a
         if percent = value_for(v, :percent)
           [p + percent, n + 1]
@@ -209,6 +219,7 @@ module Split
       @on_experiment_delete = proc{|experiment|}
       @on_before_experiment_reset = proc{|experiment|}
       @on_before_experiment_delete = proc{|experiment|}
+      @on_experiment_winner_choose = proc{|experiment|}
       @db_failover_allow_parameter_override = false
       @allow_multiple_experiments = false
       @enabled = true
@@ -220,16 +231,7 @@ module Split
       @beta_probability_simulations = 10000
       @winning_alternative_recalculation_interval = 60 * 60 * 24 # 1 day
       @redis = ENV.fetch(ENV.fetch('REDIS_PROVIDER', 'REDIS_URL'), 'redis://localhost:6379')
-    end
-
-    def redis_url=(value)
-      warn '[DEPRECATED] `redis_url=` is deprecated in favor of `redis=`'
-      self.redis = value
-    end
-
-    def redis_url
-      warn '[DEPRECATED] `redis_url` is deprecated in favor of `redis`'
-      self.redis
+      @dashboard_pagination_default_per_page = 10
     end
 
     private

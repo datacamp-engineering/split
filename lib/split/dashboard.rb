@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'sinatra/base'
 require 'split'
 require 'bigdecimal'
@@ -33,7 +34,13 @@ module Split
     end
 
     post '/force_alternative' do
-      Split::User.new(self)[params[:experiment]] = params[:alternative]
+      experiment = Split::ExperimentCatalog.find(params[:experiment])
+      alternative = Split::Alternative.new(params[:alternative], experiment.name)
+
+      cookies = JSON.parse(request.cookies['split_override']) rescue {}
+      cookies[experiment.name] = alternative.name
+      response.set_cookie('split_override', { value: cookies.to_json, path: '/' })
+
       redirect url('/')
     end
 
@@ -59,6 +66,17 @@ module Split
     post '/reopen' do
       @experiment = Split::ExperimentCatalog.find(params[:experiment])
       @experiment.reset_winner
+      redirect url('/')
+    end
+
+    post '/update_cohorting' do
+      @experiment = Split::ExperimentCatalog.find(params[:experiment])
+      case params[:cohorting_action].downcase
+      when "enable"
+        @experiment.enable_cohorting
+      when "disable"
+        @experiment.disable_cohorting
+      end
       redirect url('/')
     end
 

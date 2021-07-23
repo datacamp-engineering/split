@@ -59,6 +59,34 @@ describe Split::User do
         expect(@subject.keys).to include("link_color:finished")
       end
     end
+
+    context 'when already cleaned up' do
+      before do
+        @subject.cleanup_old_experiments!
+      end
+
+      it 'does not clean up again' do
+        expect(@subject).to_not receive(:keys_without_finished)
+        @subject.cleanup_old_experiments!
+      end
+    end
+  end
+
+  context 'allows user to be loaded from adapter' do
+    it 'loads user from adapter (RedisAdapter)' do
+      user = Split::Persistence::RedisAdapter.new(nil, 112233)
+      user['foo'] = 'bar'
+
+      ab_user = Split::User.find(112233, :redis)
+
+      expect(ab_user['foo']).to eql('bar')
+    end
+
+    it 'returns nil if adapter does not implement a finder method' do
+      ab_user = Split::User.find(112233, :dual_adapter)
+      expect(ab_user).to be_nil
+    end
+
   end
 
   context "instantiated with custom adapter" do

@@ -1,10 +1,12 @@
 # frozen_string_literal: true
+
 require 'redis'
 
 require 'split/algorithms/block_randomization'
 require 'split/algorithms/weighted_sample'
 require 'split/algorithms/whiplash'
 require 'split/alternative'
+require 'split/cache'
 require 'split/configuration'
 require 'split/encapsulated_helper'
 require 'split/exceptions'
@@ -35,9 +37,9 @@ module Split
   #      `Redis::DistRedis`, or `Redis::Namespace`.
   def redis=(server)
     @redis = if server.is_a?(String)
-      Redis.new(:url => server, :thread_safe => true)
+      Redis.new(url: server)
     elsif server.is_a?(Hash)
-      Redis.new(server.merge(:thread_safe => true))
+      Redis.new(server)
     elsif server.respond_to?(:smembers)
       server
     else
@@ -64,6 +66,17 @@ module Split
     self.configuration ||= Configuration.new
     yield(configuration)
   end
+
+  def cache(namespace, key, &block)
+    Split::Cache.fetch(namespace, key, &block)
+  end
 end
 
-Split.configure {}
+# Check to see if being run in a Rails application.  If so, wait until before_initialize to run configuration so Gems that create ENV variables have the chance to initialize first.
+if defined?(::Rails)
+  class Railtie < Rails::Railtie
+    config.before_initialize { Split.configure {} }
+  end
+else
+  Split.configure {}
+end

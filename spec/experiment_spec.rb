@@ -37,7 +37,7 @@ describe Split::Experiment do
 
     it "should save to redis" do
       experiment.save
-      expect(Split.redis.exists('basket_text')).to be true
+      expect(Split.redis.exists?('basket_text')).to be true
     end
 
     it "should save the start time to redis" do
@@ -85,8 +85,8 @@ describe Split::Experiment do
     it "should not create duplicates when saving multiple times" do
       experiment.save
       experiment.save
-      expect(Split.redis.exists('basket_text')).to be true
-      expect(Split.redis.lrange('basket_text', 0, -1)).to eq(['Basket', "Cart"])
+      expect(Split.redis.exists?('basket_text')).to be true
+      expect(Split.redis.lrange('basket_text', 0, -1)).to eq(['{"Basket":1}', '{"Cart":1}'])
     end
 
     describe 'new record?' do
@@ -118,6 +118,23 @@ describe Split::Experiment do
       experiment = Split::Experiment.new('basket_text', :alternatives => ['Basket', "Cart"], :resettable => false)
       expect(experiment.resettable).to be_falsey
     end
+
+    context 'from configuration' do
+      let(:experiment_name) { :my_experiment }
+      let(:experiments) do
+        {
+          experiment_name => {
+            :alternatives => ['Control Opt', 'Alt one']
+          }
+        }
+      end
+
+      before { Split.configuration.experiments = experiments }
+
+      it 'assigns default values to the experiment' do
+        expect(Split::Experiment.new(experiment_name).resettable).to eq(true)
+      end
+    end
   end
 
   describe 'persistent configuration' do
@@ -134,10 +151,23 @@ describe Split::Experiment do
 
     describe '#metadata' do
       let(:experiment) { Split::Experiment.new('basket_text', :alternatives => ['Basket', "Cart"], :algorithm => Split::Algorithms::Whiplash, :metadata => meta) }
+      let(:meta) { { a: 'b' }}
+
+      before do
+        experiment.save
+      end
+
+      it "should delete the key when metadata is removed" do
+        experiment.metadata = nil
+        experiment.save
+
+        expect(Split.redis.exists?(experiment.metadata_key)).to be_falsey
+      end
+
       context 'simple hash' do
         let(:meta) {  { 'basket' => 'a', 'cart' => 'b' } }
+
         it "should persist metadata in redis" do
-          experiment.save
           e = Split::ExperimentCatalog.find('basket_text')
           expect(e).to eq(experiment)
           expect(e.metadata).to eq(meta)
@@ -147,7 +177,6 @@ describe Split::Experiment do
       context 'nested hash' do
         let(:meta) {  { 'basket' => { 'one' => 'two' }, 'cart' => 'b' } }
         it "should persist metadata in redis" do
-          experiment.save
           e = Split::ExperimentCatalog.find('basket_text')
           expect(e).to eq(experiment)
           expect(e.metadata).to eq(meta)
@@ -180,7 +209,7 @@ describe Split::Experiment do
       experiment.save
 
       experiment.delete
-      expect(Split.redis.exists('link_color')).to be false
+      expect(Split.redis.exists?('link_color')).to be false
       expect(Split::ExperimentCatalog.find('link_color')).to be_nil
     end
 
@@ -206,18 +235,58 @@ describe Split::Experiment do
       experiment.delete
       expect(experiment.start_time).to be_nil
     end
-  end
 
+    it "should default cohorting back to false" do
+      experiment.disable_cohorting
+      expect(experiment.cohorting_disabled?).to eq(true)
+      experiment.delete
+      expect(experiment.cohorting_disabled?).to eq(false)
+    end
+  end
 
   describe 'winner' do
     it "should have no winner initially" do
       expect(experiment.winner).to be_nil
     end
+  end
 
-    it "should allow you to specify a winner" do
+  describe 'winner=' do
+    it 'should allow you to specify a winner' do
       experiment.save
       experiment.winner = 'red'
       expect(experiment.winner.name).to eq('red')
+    end
+
+    it 'should call the on_experiment_winner_choose hook' do
+      expect(Split.configuration.on_experiment_winner_choose).to receive(:call)
+      experiment.winner = 'green'
+    end
+
+    context 'when has_winner state is memoized' do
+      before { expect(experiment).to_not have_winner }
+
+      it 'should keep has_winner state consistent' do
+        experiment.winner = 'red'
+        expect(experiment).to have_winner
+      end
+    end
+  end
+
+  describe 'reset_winner' do
+    before { experiment.winner = 'green' }
+
+    it 'should reset the winner' do
+      experiment.reset_winner
+      expect(experiment.winner).to be_nil
+    end
+
+    context 'when has_winner state is memoized' do
+      before { expect(experiment).to have_winner }
+
+      it 'should keep has_winner state consistent' do
+        experiment.reset_winner
+        expect(experiment).to_not have_winner
+      end
     end
   end
 
@@ -234,6 +303,12 @@ describe Split::Experiment do
       it 'returns false' do
         expect(experiment).to_not have_winner
       end
+    end
+
+    it 'memoizes has_winner state' do
+      expect(experiment).to receive(:winner).once
+      expect(experiment).to_not have_winner
+      expect(experiment).to_not have_winner
     end
   end
 
@@ -335,6 +410,22 @@ describe Split::Experiment do
     end
   end
 
+  describe "#cohorting_disabled?" do
+    it "returns false when nothing has been configured" do
+      expect(experiment.cohorting_disabled?).to eq false
+    end
+
+    it "returns true when enable_cohorting is performed" do
+      experiment.enable_cohorting
+      expect(experiment.cohorting_disabled?).to eq false
+    end
+
+    it "returns false when nothing has been configured" do
+      experiment.disable_cohorting
+      expect(experiment.cohorting_disabled?).to eq true
+    end
+  end
+
   describe 'changing an existing experiment' do
     def same_but_different_alternative
       Split::ExperimentCatalog.find_or_create('link_color', 'blue', 'yellow', 'orange')
@@ -355,6 +446,21 @@ describe Split::Experiment do
       expect(same_experiment.version).to eq(1)
       same_experiment_again = same_but_different_alternative
       expect(same_experiment_again.version).to eq(1)
+    end
+
+    context "when metadata is changed" do
+      it "should increase version" do
+        experiment.save
+        experiment.metadata = { 'foo' => 'bar' }
+
+        expect { experiment.save }.to change { experiment.version }.by(1)
+      end
+
+      it "does not increase version" do
+        experiment.metadata = nil
+        experiment.save
+        expect { experiment.save }.to change { experiment.version }.by(0)
+      end
     end
 
     context 'when experiment configuration is changed' do
@@ -414,9 +520,7 @@ describe Split::Experiment do
     }
 
     context "saving experiment" do
-      def same_but_different_goals
-        Split::ExperimentCatalog.find_or_create({'link_color' => ["purchase", "refund"]}, 'blue', 'red', 'green')
-      end
+      let(:same_but_different_goals) { Split::ExperimentCatalog.find_or_create({'link_color' => ["purchase", "refund"]}, 'blue', 'red', 'green') }
 
       before { experiment.save }
 
@@ -425,7 +529,7 @@ describe Split::Experiment do
       end
 
       it "should reset an experiment if it is loaded with different goals" do
-        same_experiment = same_but_different_goals
+        same_but_different_goals
         expect(Split::ExperimentCatalog.find("link_color").goals).to eq(["purchase", "refund"])
       end
 

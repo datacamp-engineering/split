@@ -1,11 +1,12 @@
 # frozen_string_literal: true
+
 module Split
   class Metric
     attr_accessor :name
     attr_accessor :experiments
 
     def initialize(attrs = {})
-      attrs.each do |key,value|
+      attrs.each do |key, value|
         if self.respond_to?("#{key}=")
           self.send("#{key}=", value)
         end

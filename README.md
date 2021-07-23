@@ -1,13 +1,13 @@
-# [Split](http://libraries.io/rubygems/split)
+# [Split](https://libraries.io/rubygems/split)
 
 [![Gem Version](https://badge.fury.io/rb/split.svg)](http://badge.fury.io/rb/split)
-[![Build Status](https://secure.travis-ci.org/splitrb/split.svg?branch=master)](http://travis-ci.org/splitrb/split)
+[![Build Status](https://secure.travis-ci.org/splitrb/split.svg?branch=master)](https://travis-ci.org/splitrb/split)
 [![Code Climate](https://codeclimate.com/github/splitrb/split/badges/gpa.svg)](https://codeclimate.com/github/splitrb/split)
 [![Test Coverage](https://codeclimate.com/github/splitrb/split/badges/coverage.svg)](https://codeclimate.com/github/splitrb/split/coverage)
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 [![Open Source Helpers](https://www.codetriage.com/splitrb/split/badges/users.svg)](https://www.codetriage.com/splitrb/split)
 
-> 📈 The Rack Based A/B testing framework http://libraries.io/rubygems/split
+> 📈 The Rack Based A/B testing framework https://libraries.io/rubygems/split
 
 Split is a rack based A/B testing framework designed to work with Rails, Sinatra or any other rack based app.
 
@@ -110,9 +110,9 @@ Split has two options for you to use to determine which alternative is the best.
 
 The first option (default on the dashboard) uses a z test (n>30) for the difference between your control and alternative conversion rates to calculate statistical significance. This test will tell you whether an alternative is better or worse than your control, but it will not distinguish between which alternative is the best in an experiment with multiple alternatives. Split will only tell you if your experiment is 90%, 95%, or 99% significant, and this test only works if you have more than 30 participants and 5 conversions for each branch.
 
-As per this [blog post](http://www.evanmiller.org/how-not-to-run-an-ab-test.html) on the pitfalls of A/B testing, it is highly recommended that you determine your requisite sample size for each branch before running the experiment. Otherwise, you'll have an increased rate of false positives (experiments which show a significant effect where really there is none).
+As per this [blog post](https://www.evanmiller.org/how-not-to-run-an-ab-test.html) on the pitfalls of A/B testing, it is highly recommended that you determine your requisite sample size for each branch before running the experiment. Otherwise, you'll have an increased rate of false positives (experiments which show a significant effect where really there is none).
 
-[Here](http://www.evanmiller.org/ab-testing/sample-size.html) is a sample size calculator for your convenience.
+[Here](https://www.evanmiller.org/ab-testing/sample-size.html) is a sample size calculator for your convenience.
 
 The second option uses simulations from a beta distribution to determine the probability that the given alternative is the winner compared to all other alternatives. You can view these probabilities by clicking on the drop-down menu labeled "Confidence." This option should be used when the experiment has more than just 1 control and 1 alternative. It can also be used for a simple, 2-alternative A/B test.
 
@@ -159,15 +159,15 @@ In the event you want to disable all tests without having to know the individual
 
 It is not required to send `SPLIT_DISABLE=false` to activate Split.
 
-To aid testing with RSpec, write `split_helper.rb` and call `use_ab_test(alternatives_by_experiment)` in your specs as instructed below:
+
+### Rspec Helper
+To aid testing with RSpec, write `spec/support/split_helper.rb` and call `use_ab_test(alternatives_by_experiment)` in your specs as instructed below:
 
 ```ruby
-# Recommended path for this file is 'spec/support/split_helper.rb', and you will need to ensure it
-# is `require`-d by rails_helper.rb or spec_helper.rb
+# Create a file with these contents at 'spec/support/split_helper.rb'
+# and ensure it is `require`d in your rails_helper.rb or spec_helper.rb
 module SplitHelper
 
-  # Usage:
-  #
   # Force a specific experiment alternative to always be returned:
   #   use_ab_test(signup_form: "single_page")
   #
@@ -176,15 +176,23 @@ module SplitHelper
   #
   def use_ab_test(alternatives_by_experiment)
     allow_any_instance_of(Split::Helper).to receive(:ab_test) do |_receiver, experiment|
-      alternative =
-        alternatives_by_experiment.fetch(experiment) { |key| raise "Unknown experiment '#{key}'" }
+      alternatives_by_experiment.fetch(experiment) { |key| raise "Unknown experiment '#{key}'" }
     end
   end
 end
 
+# Make the `use_ab_test` method available to all specs:
 RSpec.configure do |config|
-  # Make the `use_ab_test` method available to all specs:
   config.include SplitHelper
+end
+```
+
+Now you can call `use_ab_test(alternatives_by_experiment)`  in your specs, for example:
+```ruby
+it "registers using experimental signup" do
+  use_ab_test experiment_name: "alternative_name"
+  post "/signups"
+  ...
 end
 ```
 
@@ -209,6 +217,12 @@ ab_finished(:experiment_name, reset: false)
 The user will then always see the alternative they started with.
 
 Any old unfinished experiment key will be deleted from the user's data storage if the experiment had been removed or is over and a winner had been chosen. This allows a user to enroll into any new experiment in cases when the `allow_multiple_experiments` config option is set to `false`.
+
+### Reset experiments manually
+
+By default Split automatically resets the experiment whenever it detects the configuration for an experiment has changed (e.g. you call `ab_test` with different alternatives). You can prevent this by setting the option `reset_manually` to `true`.
+
+You may want to do this when you want to change something, like the variants' names, the metadata about an experiment, etc. without resetting everything.
 
 ### Multiple experiments at once
 
@@ -249,7 +263,7 @@ Split.configure do |config|
 end
 ```
 
-By default, cookies will expire in 1 year. To change that, set the `persistence_cookie_length` in the configuration (unit of time in seconds).
+When using the cookie persistence, Split stores data into an anonymous tracking cookie named 'split', which expires in 1 year. To change that, set the `persistence_cookie_length` in the configuration (unit of time in seconds).
 
 ```ruby
 Split.configure do |config|
@@ -257,6 +271,8 @@ Split.configure do |config|
   config.persistence_cookie_length = 2592000 # 30 days
 end
 ```
+
+The data stored consists of the experiment name and the variants the user is in. Example: { "experiment_name" => "variant_a" }
 
 __Note:__ Using cookies depends on `ActionDispatch::Cookies` or any identical API
 
@@ -346,7 +362,7 @@ end
 
 If you are running `ab_test` from a view, you must define your event
 hook callback as a
-[helper_method](http://apidock.com/rails/AbstractController/Helpers/ClassMethods/helper_method)
+[helper_method](https://apidock.com/rails/AbstractController/Helpers/ClassMethods/helper_method)
 in the controller:
 
 ``` ruby
@@ -372,6 +388,8 @@ Split.configure do |config|
   # before experiment reset or deleted
   config.on_before_experiment_reset  = -> (example) { # Do something on reset }
   config.on_before_experiment_delete = -> (experiment) { # Do something else on delete }
+  # after experiment winner had been set
+  config.on_experiment_winner_choose = -> (experiment) { # Do something on winner choose }
 end
 ```
 
@@ -432,7 +450,7 @@ match "/split" => Split::Dashboard, anchor: false, via: [:get, :post, :delete], 
 end
 ```
 
-More information on this [here](http://steve.dynedge.co.uk/2011/12/09/controlling-access-to-routes-and-rack-apps-in-rails-3-with-devise-and-warden/)
+More information on this [here](https://steve.dynedge.co.uk/2011/12/09/controlling-access-to-routes-and-rack-apps-in-rails-3-with-devise-and-warden/)
 
 ### Screenshot
 
@@ -450,6 +468,7 @@ Split.configure do |config|
   config.enabled = true
   config.persistence = Split::Persistence::SessionAdapter
   #config.start_manually = false ## new test will have to be started manually from the admin panel. default false
+  #config.reset_manually = false ## if true, it never resets the experiment data, even if the configuration changes
   config.include_rails_helper = true
   config.redis = "redis://custom.redis.url:6380"
 end
@@ -476,7 +495,7 @@ Split.configure do |config|
   # IP config
   config.ignore_ip_addresses << '81.19.48.130' # or regex: /81\.19\.48\.[0-9]+/
 
-  # or provide your own filter functionality, the default is proc{ |request| is_robot? || is_ignored_ip_address? }
+  # or provide your own filter functionality, the default is proc{ |request| is_robot? || is_ignored_ip_address? || is_preview? }
   config.ignore_filter = -> (request) { CustomExcludeLogic.excludes?(request) }
 end
 ```
@@ -541,7 +560,7 @@ and:
 ab_finished(:my_first_experiment)
 ```
 
-You can also add meta data for each experiment, very useful when you need more than an alternative name to change behaviour:
+You can also add meta data for each experiment, which is very useful when you need more than an alternative name to change behaviour:
 
 ```ruby
 Split.configure do |config|
@@ -585,6 +604,8 @@ or in views:
   <small><%= meta['text'] %></small>
 <% end %>
 ```
+
+The keys used in meta data should be Strings
 
 #### Metrics
 
@@ -663,8 +684,8 @@ Once you finish one of the goals, the test is considered to be completed, and fi
 **Bad Example**: Test both how button color affects signup *and* how it affects login, at the same time. THIS WILL NOT WORK.
 
 #### Combined Experiments
-If you want to test how how button color affects signup *and* how it affects login, at the same time. Use combined tests
-Configure like so
+If you want to test how button color affects signup *and* how it affects login at the same time, use combined experiments.
+Configure like so:
 ```ruby
   Split.configuration.experiments = {
         :button_color_experiment => {
@@ -734,6 +755,20 @@ And our initializer:
 split_config = YAML.load_file(Rails.root.join('config', 'split.yml'))
 Split.redis = split_config[Rails.env]
 ```
+
+### Redis Caching (v4.0+)
+
+In some high-volume usage scenarios, Redis load can be incurred by repeated 
+fetches for fairly static data.  Enabling caching will reduce this load.
+
+ ```ruby
+Split.configuration.cache = true
+````
+
+This currently caches:
+  - `Split::ExperimentCatalog.find`
+  - `Split::Experiment.start_time`
+  - `Split::Experiment.winner`
 
 ## Namespaces
 
@@ -809,8 +844,8 @@ end
 
 ## Extensions
 
-  - [Split::Export](http://github.com/splitrb/split-export) - Easily export A/B test data out of Split.
-  - [Split::Analytics](http://github.com/splitrb/split-analytics) - Push test data to Google Analytics.
+  - [Split::Export](https://github.com/splitrb/split-export) - Easily export A/B test data out of Split.
+  - [Split::Analytics](https://github.com/splitrb/split-analytics) - Push test data to Google Analytics.
   - [Split::Mongoid](https://github.com/MongoHQ/split-mongoid) - Store experiment data in mongoid (still uses redis).
   - [Split::Cacheable](https://github.com/harrystech/split_cacheable) - Automatically create cache buckets per test.
   - [Split::Counters](https://github.com/bernardkroes/split-counters) - Add counters per experiment and alternative.
@@ -822,7 +857,7 @@ Ryan bates has produced an excellent 10 minute screencast about split on the Rai
 
 ## Blogposts
 
-* [Recipe: A/B testing with KISSMetrics and the split gem](http://robots.thoughtbot.com/post/9595887299/recipe-a-b-testing-with-kissmetrics-and-the-split-gem)
+* [Recipe: A/B testing with KISSMetrics and the split gem](https://robots.thoughtbot.com/post/9595887299/recipe-a-b-testing-with-kissmetrics-and-the-split-gem)
 * [Rails A/B testing with Split on Heroku](http://blog.nathanhumbert.com/2012/02/rails-ab-testing-with-split-on-heroku.html)
 
 ## Backers
@@ -902,9 +937,9 @@ Please do! Over 70 different people have contributed to the project, you can see
 
 ### Development
 
-The source code is hosted at [GitHub](http://github.com/splitrb/split).
+The source code is hosted at [GitHub](https://github.com/splitrb/split).
 
-Report issues and feature requests on [GitHub Issues](http://github.com/splitrb/split/issues).
+Report issues and feature requests on [GitHub Issues](https://github.com/splitrb/split/issues).
 
 You can find a discussion form on [Google Groups](https://groups.google.com/d/forum/split-ruby).
 
@@ -935,4 +970,4 @@ Please note that this project is released with a [Contributor Code of Conduct](C
 
 ## Copyright
 
-[MIT License](LICENSE) © 2018 [Andrew Nesbitt](https://github.com/andrew).
+[MIT License](LICENSE) © 2019 [Andrew Nesbitt](https://github.com/andrew).

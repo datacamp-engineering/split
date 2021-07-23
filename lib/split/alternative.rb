@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 module Split
   class Alternative
     attr_accessor :name
@@ -15,7 +16,7 @@ module Split
         @name = name
         @weight = 1
       end
-      p_winner = 0.0
+      @p_winner = 0.0
     end
 
     def to_s
@@ -75,7 +76,7 @@ module Split
       return field
     end
 
-    def set_completed_count (count, goal = nil)
+    def set_completed_count(count, goal = nil)
       field = set_field(goal)
       Split.redis.hset(key, field, count.to_i)
     end
@@ -122,7 +123,7 @@ module Split
       # can't calculate zscore for P(x) > 1
       return 'N/A' if p_a > 1 || p_c > 1
 
-      z_score = Split::Zscore.calculate(p_a, n_a, p_c, n_c)
+      Split::Zscore.calculate(p_a, n_a, p_c, n_c)
     end
 
     def extra_info

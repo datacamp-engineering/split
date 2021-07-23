@@ -21,7 +21,7 @@ describe Split::EncapsulatedHelper do
     end
 
     it "calls the block with selected alternative" do
-      expect{|block| ab_test('link_color', 'red', 'red', &block) }.to yield_with_args('red', nil)
+      expect{|block| ab_test('link_color', 'red', 'red', &block) }.to yield_with_args('red', {})
     end
 
     context "inside a view" do
@@ -33,7 +33,7 @@ describe Split::EncapsulatedHelper do
             static <%= alt %>
           <% end %>
         ERB
-        expect(template.result(binding)).to match /foo  static \d/
+        expect(template.result(binding)).to match(/foo  static \d/)
       end
 
     end
