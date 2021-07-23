@@ -29,7 +29,6 @@ describe Split::Persistence::CookieAdapter do
         subject.delete("my_key")
         expect(subject["my_key"]).to be_nil
       end
-    end
 
     describe ".config" do
       context 'config with overridden cookie key name' do
